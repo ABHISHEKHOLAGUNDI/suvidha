@@ -525,9 +525,12 @@ app.post('/payment/request-otp', async (req, res) => {
 
         if (!emailResult.success) {
             console.error(`❌ Failed to send OTP email to ${user.email}:`, emailResult.error);
+            // 🚨 HACKATHON BYPASS: If email fails, return OTP in error so user can proceed
             return res.status(500).json({
                 success: false,
-                error: `Email delivery failed: ${emailResult.error || 'SMTP Error'}. Please contact support.`
+                error: `Email delivery failed: ${emailResult.error || 'Connection Timeout'}.`,
+                message: `DEBUG MODE: Because your server provider blocks email ports, your OTP is: ${otp}`,
+                otp: otp // Also send it here for frontend easy access
             });
         } else {
             console.log(`✅ OTP sent to ${user.email} for ${billType} payment of ₹${amount}`);

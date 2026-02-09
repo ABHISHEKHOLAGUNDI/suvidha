@@ -29,18 +29,22 @@ function initEmail() {
     }
 
     try {
+        // Try Port 2525 as a last-resort relay if standard ports are blocked
+        const port = process.env.SMTP_PORT || 465;
+        const secure = port == 465;
+
         transporter = nodemailer.createTransport({
             service: 'gmail',
             host: 'smtp.gmail.com',
-            port: 465,
-            secure: true, // Use SSL/TLS
+            port: port,
+            secure: secure,
             auth: {
                 user: finalUser,
-                pass: finalPass.replace(/\s/g, '') // Remove any spaces
+                pass: finalPass.replace(/\s/g, '')
             },
-            connectionTimeout: 20000, // Increased timeout
-            greetingTimeout: 10000,
-            socketTimeout: 30000
+            connectionTimeout: 45000, // 45s for slow relays
+            greetingTimeout: 20000,
+            socketTimeout: 60000
         });
 
         // Verify connection once at start

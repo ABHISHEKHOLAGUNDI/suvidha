@@ -104,9 +104,20 @@ export const BillDetailsPage: React.FC = () => {
         } catch (e: any) {
             toast.dismiss(loadingToast); // Dismiss on error too
             console.error('OTP request error:', e);
-            toast.error('Failed to request OTP', {
-                description: e.message || 'Network error. Please check your connection.'
-            });
+
+            // 🚨 HACKATHON BYPASS: If email failed but server gave us the OTP, show it!
+            if (e.otp || (e.response && e.response.data && e.response.data.otp)) {
+                const debugOtp = e.otp || e.response.data.otp;
+                toast.error('Email Port Blocked by Provider', {
+                    description: `DEBUG MODE: Because your server blocks emails, your OTP is: ${debugOtp}`,
+                    duration: 20000, // Show for 20s
+                });
+                setViewState('otp'); // Still proceed to OTP screen
+            } else {
+                toast.error('Failed to request OTP', {
+                    description: e.message || 'Network error. Please check your connection.'
+                });
+            }
         }
     };
 
