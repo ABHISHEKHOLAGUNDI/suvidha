@@ -103,27 +103,27 @@ CREATE TABLE announcements (
 -- Admin
 INSERT INTO users (id, name, email, password, role, address, balance, wallet_balance, score)
 VALUES 
-('USR-ADMIN-001', 'Admin', 'abhishekholagundi@gmail.com', '$2b$10$YourHashedPasswordHere...', 'admin', 'Admin Office', 10000, 10000, 0);
+('USR-ADMIN-001', 'Admin', 'abhishekholagundi@gmail.com', '$2b$10$VuE5KKW/w98rsTtlN/oflOvSoLvlgh/pGnvgeZdXZk34QV5QzUsJe', 'admin', 'Admin Office', 10000, 10000, 0);
 
 -- Krishna
 INSERT INTO users (id, name, email, password, role, address, balance, wallet_balance, score)
 VALUES 
-('USR-001', 'Krishna K', 'krishnak0974@op.iitg.ac.in', '$2b$10$YourHashedPasswordHere...', 'client', 'Sector 12', 5000, 5000, 100);
+('USR-001', 'Krishna K', 'krishnak0974@op.iitg.ac.in', '$2b$10$VuE5KKW/w98rsTtlN/oflOvSoLvlgh/pGnvgeZdXZk34QV5QzUsJe', 'client', 'Sector 12', 5000, 5000, 100);
 
 -- Samarth
 INSERT INTO users (id, name, email, password, role, address, balance, wallet_balance, score)
 VALUES 
-('USR-002', 'Samarth P', 'samarthpujar6@gmail.com', '$2b$10$YourHashedPasswordHere...', 'client', 'Sector 15', 5000, 5000, 100);
+('USR-002', 'Samarth P', 'samarthpujar6@gmail.com', '$2b$10$VuE5KKW/w98rsTtlN/oflOvSoLvlgh/pGnvgeZdXZk34QV5QzUsJe', 'client', 'Sector 15', 5000, 5000, 100);
 
 -- Abhishek
 INSERT INTO users (id, name, email, password, role, address, balance, wallet_balance, score)
 VALUES 
-('USR-003', 'ABHISHEK H', 'abhishekholagunditrading@gmail.com', '$2b$10$YourHashedPasswordHere...', 'client', 'Sector 22', 5000, 5000, 100);
+('USR-003', 'ABHISHEK H', 'abhishekholagunditrading@gmail.com', '$2b$10$VuE5KKW/w98rsTtlN/oflOvSoLvlgh/pGnvgeZdXZk34QV5QzUsJe', 'client', 'Sector 22', 5000, 5000, 100);
 
 -- Sudhakar
 INSERT INTO users (id, name, email, password, role, address, balance, wallet_balance, score)
 VALUES 
-('USR-004', 'Sudhakar', 'sudhakarsonkar007@gmail.com', '$2b$10$YourHashedPasswordHere...', 'client', 'Sector 8', 5000, 5000, 100);
+('USR-004', 'Sudhakar', 'sudhakarsonkar007@gmail.com', '$2b$10$VuE5KKW/w98rsTtlN/oflOvSoLvlgh/pGnvgeZdXZk34QV5QzUsJe', 'client', 'Sector 8', 5000, 5000, 100);
 
 -- Default Settings
 INSERT INTO settings (key, value) VALUES ('feature_electricity', 'true');

@@ -12,6 +12,7 @@ const email = require('./email'); // 100% FREE email notifications via Gmail
 const db = require('./db'); // PostgreSQL Connection
 
 const app = express();
+app.set('trust proxy', 1); // Required for secure cookies behind proxies (Render)
 const server = http.createServer(app);
 const allowedOrigins = [
     process.env.FRONTEND_URL,
@@ -50,6 +51,7 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Required for cross-domain
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
