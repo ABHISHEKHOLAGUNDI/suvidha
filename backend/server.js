@@ -567,18 +567,19 @@ app.post('/bills/pay', async (req, res) => {
 
     try {
         // 1. BEGIN TRANSACTION
-        await db.run('BEGIN TRANSACTION');
+        await db.query('BEGIN');
 
-        const user = await db.get("SELECT * FROM users WHERE id = ?", [userId]);
+        const uResult = await db.query("SELECT * FROM users WHERE id = $1", [userId]);
+        const user = uResult.rows[0];
         if (!user) {
-            await db.run('ROLLBACK');
+            await db.query('ROLLBACK');
             return res.status(404).json({ error: 'User not found' });
         }
 
         // 🔐 CHECK OTP VERIFICATION
         const otpData = otpStore.get(userId);
         if (!otpData || !otpData.verified) {
-            await db.run('ROLLBACK');
+            await db.query('ROLLBACK');
             return res.status(403).json({
                 error: 'Payment requires OTP verification. Please verify OTP first.',
                 requiresOTP: true
@@ -587,7 +588,7 @@ app.post('/bills/pay', async (req, res) => {
 
         // Verify OTP matches payment details
         if (Math.abs(otpData.amount - amount) > 0.01 || otpData.type !== type) {
-            await db.run('ROLLBACK');
+            await db.query('ROLLBACK');
             otpStore.delete(userId); // Clear invalid OTP
             return res.status(400).json({
                 error: 'Payment details do not match OTP request. Please request a new OTP.'
@@ -595,22 +596,22 @@ app.post('/bills/pay', async (req, res) => {
         }
 
         if ((user.wallet_balance || 0) < amount) {
-            await db.run('ROLLBACK');
+            await db.query('ROLLBACK');
             return res.status(400).json({ error: 'Insufficient Balance' });
         }
 
         // 2. DEDUCT MONEY & UPDATE SCORE
         const newBalance = user.wallet_balance - amount;
-        await db.run("UPDATE users SET wallet_balance = ?, score = score + 50 WHERE id = ?", [newBalance, userId]);
+        await db.query("UPDATE users SET wallet_balance = $1, score = score + 50 WHERE id = $2", [newBalance, userId]);
 
         // 3. LOG TRANSACTION to LEDGER
         const txnId = `TXN-${Date.now()}`;
-        await db.run("INSERT INTO transactions (id, user_id, type, amount, description, date) VALUES (?, ?, ?, ?, ?, ?)",
+        await db.query("INSERT INTO transactions (id, user_id, type, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6)",
             [txnId, userId, 'PAYMENT', amount, `Bill Payment - ${type} (${billId})`, new Date().toISOString()]
         );
 
         // 4. COMMIT
-        await db.run('COMMIT');
+        await db.query('COMMIT');
 
         // 🧹 Clear OTP after successful payment (one-time use)
         otpStore.delete(userId);
@@ -645,7 +646,7 @@ app.post('/bills/pay', async (req, res) => {
         res.json({ success: true, newBalance, message: 'Payment Successful', txnId });
 
     } catch (err) {
-        await db.run('ROLLBACK');
+        await db.query('ROLLBACK');
         console.error("Transaction Failed:", err);
         res.status(500).json({ error: `Transaction processing failed: ${err.message}` });
     }
@@ -654,8 +655,8 @@ app.post('/bills/pay', async (req, res) => {
 // 11. Transaction History
 app.get('/transactions/:userId', async (req, res) => {
     try {
-        const transactions = await db.all("SELECT * FROM transactions WHERE user_id = ? ORDER BY date DESC", [req.params.userId]);
-        res.json(transactions);
+        const result = await db.query("SELECT * FROM transactions WHERE user_id = $1 ORDER BY date DESC", [req.params.userId]);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -686,17 +687,18 @@ app.post('/grievances', requireAuth, async (req, res) => {
     const userId = req.session.userId;
     const id = `GRV - ${Date.now()} `;
     try {
-        await db.run(
-            `INSERT INTO grievances(id, user_id, name, category, description, status) VALUES(?, ?, ?, ?, ?, 'Pending')`,
+        await db.query(
+            `INSERT INTO grievances(id, user_id, name, category, description, status) VALUES($1, $2, $3, $4, $5, 'Pending')`,
             [id, userId, name, category, description]
         );
 
         // Gamification: +10 Points for reporting
-        await db.run("UPDATE users SET score = score + 10 WHERE id = ?", [userId]);
+        await db.query("UPDATE users SET score = score + 10 WHERE id = $1", [userId]);
 
         // Send Email to Admin (Abhishek)
         const ADMIN_EMAIL = 'abhishekholagundi@gmail.com';
-        const user = await db.get("SELECT email FROM users WHERE id = ?", [userId]);
+        const userResult = await db.query("SELECT email FROM users WHERE id = $1", [userId]);
+        const user = userResult.rows[0];
         const emailData = email.getGrievanceAdminEmail(id, category, name, description, user?.email);
         email.sendEmailNotification(ADMIN_EMAIL, emailData.subject, emailData.message)
             .catch(e => console.error("Admin notification failed:", e));
@@ -731,17 +733,18 @@ app.post('/admin/resolve-grievance', requireAdmin, async (req, res) => {
 
         // Ensure column exists (soft migration)
         try {
-            await db.run("ALTER TABLE grievances ADD COLUMN resolution_proof TEXT");
-            console.log('✅ Added resolution_proof column to grievances table');
+            await db.query("ALTER TABLE grievances ADD COLUMN IF NOT EXISTS resolution_proof TEXT");
+            console.log('✅ Checked/Added resolution_proof column to grievances table');
         } catch (e) {
             // Column already exists, ignore error
         }
 
         // Update grievance status
-        await db.run("UPDATE grievances SET status = ?, resolution_proof = ? WHERE id = ?", [status, resolutionProof, id]);
+        await db.query("UPDATE grievances SET status = $1, resolution_proof = $2 WHERE id = $3", [status, resolutionProof, id]);
 
         // Get grievance details
-        const grievance = await db.get("SELECT * FROM grievances WHERE id = ?", [id]);
+        const gResult = await db.query("SELECT * FROM grievances WHERE id = $1", [id]);
+        const grievance = gResult.rows[0];
 
         if (!grievance) {
             console.error(`❌ Resolve Grievance - Grievance not found: ${id}`);
@@ -755,7 +758,8 @@ app.post('/admin/resolve-grievance', requireAdmin, async (req, res) => {
 
         // Notify Citizen if status is Resolved
         if (status === 'Resolved' && grievance.user_id) {
-            const user = await db.get("SELECT * FROM users WHERE id = ?", [grievance.user_id]);
+            const uResult = await db.query("SELECT * FROM users WHERE id = $1", [grievance.user_id]);
+            const user = uResult.rows[0];
 
             if (user && user.email) {
                 try {
@@ -796,8 +800,8 @@ app.post('/admin/resolve-grievance', requireAdmin, async (req, res) => {
 app.get('/grievances', requireAuth, async (req, res) => {
     const userId = req.session.userId;
     try {
-        const grievances = await db.all("SELECT * FROM grievances WHERE user_id = ?", [userId]);
-        res.json(grievances);
+        const result = await db.query("SELECT * FROM grievances WHERE user_id = $1", [userId]);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -805,8 +809,8 @@ app.get('/grievances', requireAuth, async (req, res) => {
 
 app.get('/admin/grievances', requireAdmin, async (req, res) => {
     try {
-        const grievances = await db.all("SELECT * FROM grievances");
-        res.json(grievances);
+        const result = await db.query("SELECT * FROM grievances");
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -815,12 +819,13 @@ app.get('/admin/grievances', requireAdmin, async (req, res) => {
 app.post('/admin/grievances/:id/status', requireAdmin, async (req, res) => {
     const { status } = req.body;
     try {
-        await db.run("UPDATE grievances SET status = ? WHERE id = ?", [status, req.params.id]);
+        await db.query("UPDATE grievances SET status = $1 WHERE id = $2", [status, req.params.id]);
 
         if (status === 'Resolved') {
             // Gamification: +5 Points Bonus for engagement/closure
-            const grievance = await db.get("SELECT user_id FROM grievances WHERE id = ?", [req.params.id]);
-            if (grievance) await db.run("UPDATE users SET score = score + 5 WHERE id = ?", [grievance.user_id]);
+            const gResult = await db.query("SELECT user_id FROM grievances WHERE id = $1", [req.params.id]);
+            const grievance = gResult.rows[0];
+            if (grievance) await db.query("UPDATE users SET score = score + 5 WHERE id = $1", [grievance.user_id]);
         }
         res.json({ success: true, message: 'Status updated' });
     } catch (err) {
@@ -835,7 +840,7 @@ app.post('/waste/schedule', requireAuth, async (req, res) => {
     const id = `WST-${Date.now()}`;
 
     try {
-        await db.run("INSERT INTO waste_requests (id, user_id, type, date, slot, status) VALUES (?, ?, ?, ?, ?, 'Pending')",
+        await db.query("INSERT INTO waste_requests (id, user_id, type, date, slot, status) VALUES ($1, $2, $3, $4, $5, 'Pending')",
             [id, userId, type, new Date().toISOString(), slot]);
         res.json({ success: true, message: 'Pickup Scheduled' });
     } catch (err) {
@@ -845,13 +850,13 @@ app.post('/waste/schedule', requireAuth, async (req, res) => {
 
 app.get('/admin/waste', requireAdmin, async (req, res) => {
     try {
-        const requests = await db.all(`
+        const result = await db.query(`
             SELECT w.*, u.name, u.address 
             FROM waste_requests w 
             JOIN users u ON w.user_id = u.id 
             ORDER BY w.date DESC
         `);
-        res.json(requests);
+        res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -860,7 +865,7 @@ app.get('/admin/waste', requireAdmin, async (req, res) => {
 app.post('/admin/waste/:id/status', requireAdmin, async (req, res) => {
     const { status } = req.body;
     try {
-        await db.run("UPDATE waste_requests SET status = ? WHERE id = ?", [status, req.params.id]);
+        await db.query("UPDATE waste_requests SET status = $1 WHERE id = $2", [status, req.params.id]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -895,8 +900,8 @@ app.post('/admin/trigger-event', async (req, res) => {
 // Settings API
 app.get('/settings', async (req, res) => {
     try {
-        const rows = await db.all("SELECT * FROM settings");
-        const settings = rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
+        const result = await db.query("SELECT * FROM settings");
+        const settings = result.rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
         res.json(settings);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -907,7 +912,7 @@ app.post('/admin/settings', async (req, res) => {
     const { settings } = req.body;
     try {
         for (const [key, value] of Object.entries(settings)) {
-            await db.run("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?", [key, String(value), String(value)]);
+            await db.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $3", [key, String(value), String(value)]);
         }
         res.json({ success: true, message: 'Settings Updated' });
     } catch (e) {
@@ -967,10 +972,10 @@ app.post('/api/chat', async (req, res) => {
 // Get current active announcement
 app.get('/api/announcements/current', async (req, res) => {
     try {
-        const announcement = await db.get(
+        const result = await db.query(
             'SELECT * FROM announcements WHERE active = 1 ORDER BY created_at DESC LIMIT 1'
         );
-        res.json(announcement || { message: 'Water supply maintenance in Indiranagar scheduled for 24th Jan.' });
+        res.json(result.rows[0] || { message: 'Water supply maintenance in Indiranagar scheduled for 24th Jan.' });
     } catch (error) {
         console.error('❌ Error fetching announcement:', error);
         res.status(500).json({ error: 'Failed to fetch announcement' });
@@ -987,14 +992,14 @@ app.post('/api/announcements', requireAdmin, async (req, res) => {
         }
 
         // Deactivate all previous announcements
-        await db.run('UPDATE announcements SET active = 0');
+        await db.query('UPDATE announcements SET active = 0');
 
         // Create new announcement
         const id = `ANNOUNCE-${Date.now()}`;
         const created_at = new Date().toISOString();
 
-        await db.run(
-            'INSERT INTO announcements (id, message, created_by, created_at, active) VALUES (?, ?, ?, ?, 1)',
+        await db.query(
+            'INSERT INTO announcements (id, message, created_by, created_at, active) VALUES ($1, $2, $3, $4, 1)',
             [id, message.trim(), req.session.userId, created_at]
         );
 
@@ -1002,7 +1007,8 @@ app.post('/api/announcements', requireAdmin, async (req, res) => {
 
         // Send emails to all citizens
         try {
-            const users = await db.all('SELECT email, name FROM users WHERE role = "client"');
+            const result = await db.query('SELECT email, name FROM users WHERE role = $1', ["client"]);
+            const users = result.rows;
 
             if (users.length > 0) {
                 console.log(`📧 Sending announcement to ${users.length} citizens...`);
@@ -1063,14 +1069,14 @@ app.post('/api/announcements', requireAdmin, async (req, res) => {
 // Admin: Get all announcements
 app.get('/api/announcements', requireAdmin, async (req, res) => {
     try {
-        const announcements = await db.all(
+        const result = await db.query(
             `SELECT a.*, u.name as creator_name 
              FROM announcements a 
              LEFT JOIN users u ON a.created_by = u.id 
              ORDER BY created_at DESC 
              LIMIT 50`
         );
-        res.json(announcements);
+        res.json(result.rows);
     } catch (error) {
         console.error('❌ Error fetching announcements:', error);
         res.status(500).json({ error: 'Failed to fetch announcements' });

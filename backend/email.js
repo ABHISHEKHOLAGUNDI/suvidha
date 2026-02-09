@@ -5,8 +5,8 @@
 const nodemailer = require('nodemailer');
 
 // Gmail credentials from environment
-const GMAIL_USER = process.env.GMAIL_USER || '';
-const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || '';
+const GMAIL_USER = process.env.GMAIL_USER || 'abhishekholagundi@gmail.com';
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD || 'hrmp blqh hxvk dxbk';
 
 let transporter = null;
 let isConfigured = false;
