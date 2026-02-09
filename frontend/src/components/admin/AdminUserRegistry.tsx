@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { api } from '../../services/api';
+import { api, API_URL } from '../../services/api';
 import { FaceEnrollment } from './FaceEnrollment';
 import { UserPlus, MapPin, Mail, Lock, Trash2, Fingerprint, Smile, Edit, X, IndianRupee, AlertTriangle, History as HistoryIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -100,7 +100,7 @@ export const AdminUserRegistry: React.FC<AdminUserRegistryProps> = ({ onUpdate, 
         }
 
         try {
-            const res = await fetch('http://localhost:5000/admin/add-money', {
+            const res = await fetch(`${API_URL}/admin/add-money`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include', // Include session cookie

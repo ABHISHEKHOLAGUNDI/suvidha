@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_URL } from '../../services/api';
 import { DashboardLayout } from '../dashboard/DashboardLayout';
 import { Megaphone, Send, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -16,7 +17,7 @@ export const AnnouncementsPage: React.FC = () => {
 
     const fetchAnnouncements = async () => {
         try {
-            const res = await fetch('http://localhost:5000/api/announcements', {
+            const res = await fetch(`${API_URL}/api/announcements`, {
                 credentials: 'include'
             });
             const data = await res.json();
@@ -37,7 +38,7 @@ export const AnnouncementsPage: React.FC = () => {
         setSuccess(false);
 
         try {
-            const res = await fetch('http://localhost:5000/api/announcements', {
+            const res = await fetch(`${API_URL}/api/announcements`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',

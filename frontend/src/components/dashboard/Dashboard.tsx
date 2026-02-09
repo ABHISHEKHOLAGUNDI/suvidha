@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { DashboardLayout } from '../dashboard/DashboardLayout';
 import { ServiceCard } from '../ui/ServiceCard';
 import { Trash2, Megaphone, Siren, TrendingUp, Award, Zap, Activity, Shield, CheckCircle, Map as MapIcon, Building2, Receipt } from 'lucide-react';
-import { api } from '../../services/api';
+import { api, API_URL } from '../../services/api';
 import { CURRENCY_FORMAT } from '../../lib/billing';
 import { EmergencyAlert } from './EmergencyAlert';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -19,7 +19,7 @@ const CityUpdateBanner: React.FC = () => {
     useEffect(() => {
         const fetchAnnouncement = async () => {
             try {
-                const res = await fetch('http://localhost:5000/api/announcements/current', {
+                const res = await fetch(`${API_URL}/api/announcements/current`, {
                     credentials: 'include'
                 });
                 const data = await res.json();
@@ -50,7 +50,7 @@ const CityUpdateBanner: React.FC = () => {
 };
 
 
-const socket = io('http://localhost:5000'); // Initialize socket outside component
+const socket = io(API_URL); // Initialize socket outside component
 
 export const Dashboard: React.FC = () => {
     const navigate = useNavigate();
@@ -86,7 +86,7 @@ export const Dashboard: React.FC = () => {
                 setElecBill(elec);
 
                 // Fetch Settings
-                const res = await fetch('http://localhost:5000/settings');
+                const res = await fetch(`${API_URL}/settings`);
                 const settingsData = await res.json();
                 setSettings(settingsData);
 
@@ -111,7 +111,7 @@ export const Dashboard: React.FC = () => {
                 if (sessionUser) {
                     setUser(sessionUser);
                 }
-                const res = await fetch('http://localhost:5000/settings');
+                const res = await fetch(`${API_URL}/settings`);
                 const settingsData = await res.json();
                 setSettings(settingsData);
             } catch (e) {

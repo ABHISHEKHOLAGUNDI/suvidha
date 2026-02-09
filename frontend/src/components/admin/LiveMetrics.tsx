@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useSocket } from '../../hooks/useSocket';
+import { API_URL } from '../../services/api';
 import { Zap, Droplets, AlertTriangle, TrendingUp, Shield, Activity } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -160,7 +161,7 @@ export const LiveMetrics: React.FC = () => {
                         onClick={() => {
                             const newState = !autoChaos;
                             setAutoChaos(newState);
-                            fetch('http://localhost:5000/admin/simulation/toggle', {
+                            fetch(`${API_URL}/admin/simulation/toggle`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ enabled: newState })
@@ -176,7 +177,7 @@ export const LiveMetrics: React.FC = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <button
-                        onClick={() => fetch('http://localhost:5000/admin/trigger-event', {
+                        onClick={() => fetch(`${API_URL}/admin/trigger-event`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ type: 'POWER_OUTAGE' })
@@ -187,7 +188,7 @@ export const LiveMetrics: React.FC = () => {
                     </button>
 
                     <button
-                        onClick={() => fetch('http://localhost:5000/admin/trigger-event', {
+                        onClick={() => fetch(`${API_URL}/admin/trigger-event`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ type: 'WATER_LEAK' })
@@ -198,7 +199,7 @@ export const LiveMetrics: React.FC = () => {
                     </button>
 
                     <button
-                        onClick={() => fetch('http://localhost:5000/admin/trigger-event', {
+                        onClick={() => fetch(`${API_URL}/admin/trigger-event`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ type: 'RESOLVE_ALL' })

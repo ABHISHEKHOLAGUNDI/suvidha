@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AdminLayout } from './AdminLayout';
-import { api } from '../../services/api';
+import { api, API_URL } from '../../services/api';
 import type { Grievance } from '../../services/db';
 import { CheckCircle, XCircle, RefreshCw, Map, BarChart3, Users, Zap, Sliders, Database, UploadCloud, Megaphone } from 'lucide-react';
 import { AdminUserRegistry } from './AdminUserRegistry';
@@ -112,7 +112,7 @@ export const AdminDashboard: React.FC = () => {
 
     const fetchSettings = async () => {
         try {
-            const res = await fetch('http://localhost:5000/settings');
+            const res = await fetch(`${API_URL}/settings`);
             const data = await res.json();
             setSettings(data);
         } catch (e) {
@@ -146,7 +146,7 @@ export const AdminDashboard: React.FC = () => {
 
     const saveSettings = async (newSettings: any) => {
         try {
-            await fetch('http://localhost:5000/admin/settings', {
+            await fetch(`${API_URL}/admin/settings`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ settings: newSettings })

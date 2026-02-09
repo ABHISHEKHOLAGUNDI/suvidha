@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { API_URL } from '../../services/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, X, Send, User, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -41,7 +42,7 @@ export const SahayakChat: React.FC = () => {
 
         try {
             // Call our new AI Chat endpoint
-            const res = await fetch('http://localhost:5000/api/chat', {
+            const res = await fetch(`${API_URL}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include', // Send session cookie
