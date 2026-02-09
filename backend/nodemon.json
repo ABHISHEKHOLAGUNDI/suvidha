@@ -1,0 +1,14 @@
+{
+    "ignore": [
+        "*.sqlite",
+        "*.sqlite-journal",
+        "database.db",
+        "*.log"
+    ],
+    "watch": [
+        "server.js",
+        "email.js",
+        "simulation.js"
+    ],
+    "ext": "js,json"
+}

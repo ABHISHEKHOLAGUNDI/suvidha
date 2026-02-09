@@ -1,0 +1,9 @@
+/* Import Leaflet CSS */
+@import 'leaflet/dist/leaflet.css';
+
+/* Fix map container */
+.leaflet-container {
+    height: 100%;
+    width: 100%;
+    z-index: 1;
+}

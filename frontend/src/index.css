@@ -1,0 +1,144 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  box-sizing: border-box;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: inherit;
+}
+
+@layer base {
+  body {
+    @apply antialiased text-slate-100 select-none overflow-x-hidden cursor-default;
+    width: 100vw;
+    margin: 0;
+    /* Parsec Theme: Deep Void */
+    background-color: #03030c;
+    background-image:
+      radial-gradient(circle at 50% 50%, rgba(20, 20, 50, 0.5) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(255, 165, 0, 0.05) 0%, transparent 20%);
+    min-height: 100vh;
+    font-family: 'Times New Roman', serif;
+    /* Fallback to standard serif for now */
+  }
+
+  /* Headings should be majestic */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Times New Roman', serif;
+    /* Simulate the Parsec Serif */
+    letter-spacing: 0.05em;
+  }
+}
+
+@layer utilities {
+
+  /* Parsec Gold/Dark Glass */
+  .glass-panel {
+    @apply bg-[#0b0b2e]/80 backdrop-blur-xl border border-orange-500/20;
+    box-shadow: 0 0 50px rgba(0, 0, 0, 0.5);
+  }
+
+  .glass-card {
+    @apply bg-[#0b0b2e]/60 backdrop-blur-md border border-orange-500/30 transition-all duration-300;
+  }
+
+  .glass-card:hover {
+    @apply bg-[#0b0b2e]/80 border-orange-400/50;
+    box-shadow: 0 0 20px rgba(255, 165, 0, 0.1);
+  }
+
+  /* Text Gradients */
+  .text-gradient-gold {
+    @apply bg-clip-text text-transparent bg-gradient-to-b from-[#f3e5ab] to-[#a08035];
+  }
+
+  .border-gold-glow {
+    @apply border border-orange-500/30;
+    box-shadow: 0 0 15px rgba(255, 165, 0, 0.1);
+  }
+}
+
+/* Custom Scrollbar for list views */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* === ACCESSIBILITY MODES === */
+
+/* High Contrast Mode */
+html.high-contrast {
+  --contrast-boost: 1.3;
+}
+
+html.high-contrast body {
+  background-color: #000000 !important;
+  background-image: none !important;
+}
+
+html.high-contrast .glass-panel,
+html.high-contrast .glass-card {
+  background: #1a1a1a !important;
+  border-color: #ffffff !important;
+  border-width: 2px !important;
+}
+
+html.high-contrast .text-slate-300,
+html.high-contrast .text-slate-400 {
+  color: #ffffff !important;
+}
+
+html.high-contrast button,
+html.high-contrast a {
+  border: 2px solid currentColor !important;
+}
+
+/* Font Size Modes */
+html.font-normal {
+  font-size: 16px;
+}
+
+html.font-large {
+  font-size: 18px;
+}
+
+html.font-xlarge {
+  font-size: 21px;
+}
+
+html.font-large h1,
+html.font-xlarge h1 {
+  font-size: 2.5rem;
+}
+
+html.font-large h2,
+html.font-xlarge h2 {
+  font-size: 2rem;
+}
+
+html.font-large h3,
+html.font-xlarge h3 {
+  font-size: 1.75rem;
+}
