@@ -13,7 +13,14 @@ let isConfigured = false;
 
 // Initialize Gmail transporter
 function initEmail() {
-    if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
+    // Selection logic: Ignore common placeholders from .env
+    const envUser = process.env.GMAIL_USER;
+    const envPass = process.env.GMAIL_APP_PASSWORD;
+
+    const finalUser = (envUser && !envUser.includes('your-email')) ? envUser : GMAIL_USER;
+    const finalPass = (envPass && !envPass.includes('your-app-password')) ? envPass : GMAIL_APP_PASSWORD;
+
+    if (!finalUser || !finalPass || finalUser.includes('your-email')) {
         console.log('⚠️  Email notifications disabled. Add to .env:');
         console.log('   GMAIL_USER=your.email@gmail.com');
         console.log('   GMAIL_APP_PASSWORD=your_16char_app_password');
@@ -27,8 +34,8 @@ function initEmail() {
             port: 587,
             secure: false, // Use STARTTLS
             auth: {
-                user: GMAIL_USER,
-                pass: GMAIL_APP_PASSWORD.replace(/\s/g, '') // Remove any spaces
+                user: finalUser,
+                pass: finalPass.replace(/\s/g, '') // Remove any spaces
             },
             connectionTimeout: 10000,
             greetingTimeout: 5000,

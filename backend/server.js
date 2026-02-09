@@ -525,6 +525,10 @@ app.post('/payment/request-otp', async (req, res) => {
 
         if (!emailResult.success) {
             console.error(`❌ Failed to send OTP email to ${user.email}:`, emailResult.error);
+            return res.status(500).json({
+                success: false,
+                error: `Email delivery failed: ${emailResult.error || 'SMTP Error'}. Please contact support.`
+            });
         } else {
             console.log(`✅ OTP sent to ${user.email} for ${billType} payment of ₹${amount}`);
         }
@@ -657,10 +661,12 @@ app.post('/bills/pay', async (req, res) => {
             email.sendEmailNotification(user.email, subject, message)
                 .then(result => {
                     if (result.success) {
-                        console.log(`📧 Email sent to ${user.name}: ${result.messageId}`);
+                        console.log(`📧 Confirmation email sent to ${user.name}: ${result.messageId}`);
+                    } else {
+                        console.error(`❌ Failed to send confirmation email to ${user.name}:`, result.error);
                     }
                 })
-                .catch(err => console.error('Email notification error:', err));
+                .catch(err => console.error('❌ SMTP Background Error (Confirmation):', err));
         }
 
         res.json({ success: true, newBalance, message: 'Payment Successful', txnId });
