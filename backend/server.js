@@ -420,596 +420,607 @@ app.delete('/admin/users/:id', requireAdmin, async (req, res) => {
         console.error('Delete user error:', err);
         res.status(500).json({ error: err.message });
     }
-});
-
-// 8. Bills API
-app.get('/bills/:userId', async (req, res) => {
-    const bills = [
-        { id: 'ELEC-001', userId: req.params.userId, type: 'electricity', amount: 1250.50, dueDate: '2024-02-15', status: 'pending' },
-        { id: 'WATER-001', userId: req.params.userId, type: 'water', amount: 450.00, dueDate: '2024-02-28', status: 'pending' },
-        { id: 'GAS-001', userId: req.params.userId, type: 'gas', amount: 900.00, dueDate: '2024-03-05', status: 'pending' }
-    ];
-    res.json(bills);
-});
-
-// ======= OTP PAYMENT VERIFICATION ENDPOINTS =======
-
-// Request OTP for Payment
-app.post('/payment/request-otp', async (req, res) => {
-    const { userId, amount, billType } = req.body;
-
-    try {
-        if (!userId || !amount || !billType) {
-            return res.status(400).json({ success: false, error: 'Missing required fields' });
+    // 7.5 Get User Score
+    app.get('/users/:userId/score', async (req, res) => {
+        try {
+            const result = await db.query("SELECT score FROM users WHERE id = $1", [req.params.userId]);
+            if (result.rows.length === 0) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            res.json({ score: result.rows[0].score });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
         }
+    });
 
-        const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
-        const user = result.rows[0];
+    // 8. Bills API
+    app.get('/bills/:userId', async (req, res) => {
+        const bills = [
+            { id: 'ELEC-001', userId: req.params.userId, type: 'electricity', amount: 1250.50, dueDate: '2024-02-15', status: 'pending' },
+            { id: 'WATER-001', userId: req.params.userId, type: 'water', amount: 450.00, dueDate: '2024-02-28', status: 'pending' },
+            { id: 'GAS-001', userId: req.params.userId, type: 'gas', amount: 900.00, dueDate: '2024-03-05', status: 'pending' }
+        ];
+        res.json(bills);
+    });
 
-        if (!user) {
-            return res.status(404).json({ success: false, error: 'User not found' });
-        }
+    // ======= OTP PAYMENT VERIFICATION ENDPOINTS =======
 
-        if (!user.email) {
-            return res.status(400).json({ success: false, error: 'No email registered' });
-        }
+    // Request OTP for Payment
+    app.post('/payment/request-otp', async (req, res) => {
+        const { userId, amount, billType } = req.body;
 
-        // Rate limiting check
-        const now = Date.now();
-        const existing = otpStore.get(userId);
+        try {
+            if (!userId || !amount || !billType) {
+                return res.status(400).json({ success: false, error: 'Missing required fields' });
+            }
 
-        if (existing) {
-            const timeSinceLastRequest = now - (existing.lastRequest || 0);
-            if (existing.requestCount >= OTP_RATE_LIMIT && timeSinceLastRequest < OTP_RATE_WINDOW_MS) {
-                const waitTime = Math.ceil((OTP_RATE_WINDOW_MS - timeSinceLastRequest) / 60000);
-                return res.status(429).json({
-                    success: false,
-                    error: `Too many OTP requests. Please wait ${waitTime} minutes.`,
-                    retryAfter: waitTime
+            const result = await db.query('SELECT * FROM users WHERE id = $1', [userId]);
+            const user = result.rows[0];
+
+            if (!user) {
+                return res.status(404).json({ success: false, error: 'User not found' });
+            }
+
+            if (!user.email) {
+                return res.status(400).json({ success: false, error: 'No email registered' });
+            }
+
+            // Rate limiting check
+            const now = Date.now();
+            const existing = otpStore.get(userId);
+
+            if (existing) {
+                const timeSinceLastRequest = now - (existing.lastRequest || 0);
+                if (existing.requestCount >= OTP_RATE_LIMIT && timeSinceLastRequest < OTP_RATE_WINDOW_MS) {
+                    const waitTime = Math.ceil((OTP_RATE_WINDOW_MS - timeSinceLastRequest) / 60000);
+                    return res.status(429).json({
+                        success: false,
+                        error: `Too many OTP requests. Please wait ${waitTime} minutes.`,
+                        retryAfter: waitTime
+                    });
+                }
+                if (timeSinceLastRequest >= OTP_RATE_WINDOW_MS) {
+                    existing.requestCount = 0;
+                }
+            }
+
+            // Generate new OTP
+            const otp = generateOTP();
+            const expiry = now + OTP_EXPIRY_MS;
+
+            // Store OTP
+            otpStore.set(userId, {
+                otp,
+                expiry,
+                amount,
+                type: billType,
+                requestCount: (existing?.requestCount || 0) + 1,
+                lastRequest: now,
+                verified: false
+            });
+
+            // Send OTP email
+            const emailTemplate = email.getOTPEmail(user.name, otp, billType, amount);
+            const emailResult = await email.sendEmailNotification(user.email, emailTemplate.subject, emailTemplate.message);
+
+            // Check if email was sent or if in demo mode
+            if (emailResult.demo) {
+                console.log(`📧 DEMO MODE: OTP for ${user.email}: ${otp}`);
+                return res.json({
+                    success: true,
+                    message: `DEMO MODE: OTP is ${otp} (Check console)`,
+                    demoMode: true,
+                    expiresIn: OTP_EXPIRY_MS / 1000
                 });
             }
-            if (timeSinceLastRequest >= OTP_RATE_WINDOW_MS) {
-                existing.requestCount = 0;
+
+            if (!emailResult.success) {
+                console.error(`❌ Failed to send OTP email to ${user.email}:`, emailResult.error);
+            } else {
+                console.log(`✅ OTP sent to ${user.email} for ${billType} payment of ₹${amount}`);
             }
-        }
 
-        // Generate new OTP
-        const otp = generateOTP();
-        const expiry = now + OTP_EXPIRY_MS;
-
-        // Store OTP
-        otpStore.set(userId, {
-            otp,
-            expiry,
-            amount,
-            type: billType,
-            requestCount: (existing?.requestCount || 0) + 1,
-            lastRequest: now,
-            verified: false
-        });
-
-        // Send OTP email
-        const emailTemplate = email.getOTPEmail(user.name, otp, billType, amount);
-        const emailResult = await email.sendEmailNotification(user.email, emailTemplate.subject, emailTemplate.message);
-
-        // Check if email was sent or if in demo mode
-        if (emailResult.demo) {
-            console.log(`📧 DEMO MODE: OTP for ${user.email}: ${otp}`);
-            return res.json({
+            res.json({
                 success: true,
-                message: `DEMO MODE: OTP is ${otp} (Check console)`,
-                demoMode: true,
+                message: 'OTP sent to your registered email',
                 expiresIn: OTP_EXPIRY_MS / 1000
             });
+        } catch (err) {
+            console.error('❌ OTP request error:', err);
+            res.status(500).json({ success: false, error: 'Failed to generate OTP' });
         }
+    });
 
-        if (!emailResult.success) {
-            console.error(`❌ Failed to send OTP email to ${user.email}:`, emailResult.error);
-        } else {
-            console.log(`✅ OTP sent to ${user.email} for ${billType} payment of ₹${amount}`);
-        }
+    // Verify OTP
+    app.post('/payment/verify-otp', async (req, res) => {
+        const { userId, otp } = req.body;
 
-        res.json({
-            success: true,
-            message: 'OTP sent to your registered email',
-            expiresIn: OTP_EXPIRY_MS / 1000
-        });
-    } catch (err) {
-        console.error('❌ OTP request error:', err);
-        res.status(500).json({ success: false, error: 'Failed to generate OTP' });
-    }
-});
-
-// Verify OTP
-app.post('/payment/verify-otp', async (req, res) => {
-    const { userId, otp } = req.body;
-
-    try {
-        if (!userId || !otp) {
-            return res.status(400).json({ success: false, error: 'Missing userId or otp' });
-        }
-
-        const otpData = otpStore.get(userId);
-
-        if (!otpData) {
-            return res.status(400).json({ success: false, error: 'No OTP found' });
-        }
-
-        if (Date.now() > otpData.expiry) {
-            otpStore.delete(userId);
-            return res.status(400).json({ success: false, error: 'OTP expired' });
-        }
-
-        if (otpData.otp !== otp.toString()) {
-            return res.status(400).json({ success: false, error: 'Invalid OTP' });
-        }
-
-        // Mark as verified
-        otpData.verified = true;
-        otpStore.set(userId, otpData);
-
-        res.json({
-            success: true,
-            verified: true,
-            message: 'OTP verified successfully'
-        });
-    } catch (err) {
-        res.status(500).json({ success: false, error: 'Failed to verify OTP' });
-    }
-});
-
-// ======= END OTP ENDPOINTS =======
-
-// 9. Pay Bill
-// 9. Pay Bill (ACID Compliant)
-app.post('/bills/pay', async (req, res) => {
-    const { userId, billId, amount, type } = req.body;
-
-    try {
-        // 1. BEGIN TRANSACTION
-        await db.query('BEGIN');
-
-        const uResult = await db.query("SELECT * FROM users WHERE id = $1", [userId]);
-        const user = uResult.rows[0];
-        if (!user) {
-            await db.query('ROLLBACK');
-            return res.status(404).json({ error: 'User not found' });
-        }
-
-        // 🔐 CHECK OTP VERIFICATION
-        const otpData = otpStore.get(userId);
-        if (!otpData || !otpData.verified) {
-            await db.query('ROLLBACK');
-            return res.status(403).json({
-                error: 'Payment requires OTP verification. Please verify OTP first.',
-                requiresOTP: true
-            });
-        }
-
-        // Verify OTP matches payment details
-        if (Math.abs(otpData.amount - amount) > 0.01 || otpData.type !== type) {
-            await db.query('ROLLBACK');
-            otpStore.delete(userId); // Clear invalid OTP
-            return res.status(400).json({
-                error: 'Payment details do not match OTP request. Please request a new OTP.'
-            });
-        }
-
-        if ((user.wallet_balance || 0) < amount) {
-            await db.query('ROLLBACK');
-            return res.status(400).json({ error: 'Insufficient Balance' });
-        }
-
-        // 2. DEDUCT MONEY & UPDATE SCORE
-        const newBalance = user.wallet_balance - amount;
-        await db.query("UPDATE users SET wallet_balance = $1, score = score + 50 WHERE id = $2", [newBalance, userId]);
-
-        // 3. LOG TRANSACTION to LEDGER
-        const txnId = `TXN-${Date.now()}`;
-        await db.query("INSERT INTO transactions (id, user_id, type, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6)",
-            [txnId, userId, 'PAYMENT', amount, `Bill Payment - ${type} (${billId})`, new Date().toISOString()]
-        );
-
-        // 4. COMMIT
-        await db.query('COMMIT');
-
-        // 🧹 Clear OTP after successful payment (one-time use)
-        otpStore.delete(userId);
-
-        // 5. REAL-TIME EVENT (To Admin Map)
-        io.emit('city-pulse', {
-            type: 'TRANSACTION',
-            lat: user.lat,
-            lng: user.lng,
-            amount: amount,
-            category: type,
-            timestamp: new Date().toISOString()
-        });
-
-        // 6. SEND EMAIL NOTIFICATION (100% FREE with Gmail)
-        if (user.email) {
-            const { subject, message } = email.getBillPaymentEmail(
-                user.name,
-                type,
-                amount,
-                txnId
-            );
-            email.sendEmailNotification(user.email, subject, message)
-                .then(result => {
-                    if (result.success) {
-                        console.log(`📧 Email sent to ${user.name}: ${result.messageId}`);
-                    }
-                })
-                .catch(err => console.error('Email notification error:', err));
-        }
-
-        res.json({ success: true, newBalance, message: 'Payment Successful', txnId });
-
-    } catch (err) {
-        await db.query('ROLLBACK');
-        console.error("Transaction Failed:", err);
-        res.status(500).json({ error: `Transaction processing failed: ${err.message}` });
-    }
-});
-
-// 11. Transaction History
-app.get('/transactions/:userId', async (req, res) => {
-    try {
-        const result = await db.query("SELECT * FROM transactions WHERE user_id = $1 ORDER BY date DESC", [req.params.userId]);
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// 12. Simulate Monthly Bill Generation
-app.post('/admin/generate-bills', requireAdmin, async (req, res) => {
-    try {
-        // In a real app, this would insert into a bills table.
-        // For this hackathon demo where bills are static/mocked in GET /bills/:userId,
-        // we will simulate this by logging a "System Event" or just returning success.
-        // To make it "feel" real, we can add a penalty transaction or log a 'BILL_GENERATED' event.
-
-        await db.run("INSERT INTO system_events (id, type, status, affected_users, timestamp) VALUES (?, ?, ?, ?, ?)",
-            [`EVT-${Date.now()}`, 'BILLING_CYCLE', 'COMPLETED', 'ALL', new Date().toISOString()]
-        );
-
-        console.log("✅ Monthly bills generated (Simulated)");
-        res.json({ success: true, message: 'Monthly bills generated for all users.' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// 10. Grievances API
-app.post('/grievances', requireAuth, async (req, res) => {
-    const { category, description, name } = req.body;
-    const userId = req.session.userId;
-    const id = `GRV - ${Date.now()} `;
-    try {
-        await db.query(
-            `INSERT INTO grievances(id, user_id, name, category, description, status) VALUES($1, $2, $3, $4, $5, 'Pending')`,
-            [id, userId, name, category, description]
-        );
-
-        // Gamification: +10 Points for reporting
-        await db.query("UPDATE users SET score = score + 10 WHERE id = $1", [userId]);
-
-        // Send Email to Admin (Abhishek)
-        const ADMIN_EMAIL = 'abhishekholagundi@gmail.com';
-        const userResult = await db.query("SELECT email FROM users WHERE id = $1", [userId]);
-        const user = userResult.rows[0];
-        const emailData = email.getGrievanceAdminEmail(id, category, name, description, user?.email);
-        email.sendEmailNotification(ADMIN_EMAIL, emailData.subject, emailData.message)
-            .catch(e => console.error("Admin notification failed:", e));
-
-        res.status(201).json({ id, message: 'Grievance submitted successfully' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Admin Resolve Grievance
-app.post('/admin/resolve-grievance', requireAdmin, async (req, res) => {
-    const { id, status, resolutionProof } = req.body; // resolutionProof is Base64 string
-
-    try {
-        // Validate request body
-        if (!id || !status) {
-            console.error('❌ Resolve Grievance - Missing required fields');
-            return res.status(400).json({
-                success: false,
-                error: 'Missing required fields: id, status'
-            });
-        }
-
-        if (status === 'Resolved' && !resolutionProof) {
-            console.error('❌ Resolve Grievance - Missing resolution proof');
-            return res.status(400).json({
-                success: false,
-                error: 'Resolution proof (photo) is required when marking as resolved'
-            });
-        }
-
-        // Ensure column exists (soft migration)
         try {
-            await db.query("ALTER TABLE grievances ADD COLUMN IF NOT EXISTS resolution_proof TEXT");
-            console.log('✅ Checked/Added resolution_proof column to grievances table');
-        } catch (e) {
-            // Column already exists, ignore error
-        }
+            if (!userId || !otp) {
+                return res.status(400).json({ success: false, error: 'Missing userId or otp' });
+            }
 
-        // Update grievance status
-        await db.query("UPDATE grievances SET status = $1, resolution_proof = $2 WHERE id = $3", [status, resolutionProof, id]);
+            const otpData = otpStore.get(userId);
 
-        // Get grievance details
-        const gResult = await db.query("SELECT * FROM grievances WHERE id = $1", [id]);
-        const grievance = gResult.rows[0];
+            if (!otpData) {
+                return res.status(400).json({ success: false, error: 'No OTP found' });
+            }
 
-        if (!grievance) {
-            console.error(`❌ Resolve Grievance - Grievance not found: ${id}`);
-            return res.status(404).json({
-                success: false,
-                error: 'Grievance not found'
+            if (Date.now() > otpData.expiry) {
+                otpStore.delete(userId);
+                return res.status(400).json({ success: false, error: 'OTP expired' });
+            }
+
+            if (otpData.otp !== otp.toString()) {
+                return res.status(400).json({ success: false, error: 'Invalid OTP' });
+            }
+
+            // Mark as verified
+            otpData.verified = true;
+            otpStore.set(userId, otpData);
+
+            res.json({
+                success: true,
+                verified: true,
+                message: 'OTP verified successfully'
             });
+        } catch (err) {
+            res.status(500).json({ success: false, error: 'Failed to verify OTP' });
         }
+    });
 
-        console.log(`✅ Grievance ${id} status updated to: ${status}`);
+    // ======= END OTP ENDPOINTS =======
 
-        res.json({
-            success: true,
-            message: 'Grievance update processed. Citizen notification pending in background.'
-        });
+    // 9. Pay Bill
+    // 9. Pay Bill (ACID Compliant)
+    app.post('/bills/pay', async (req, res) => {
+        const { userId, billId, amount, type } = req.body;
 
-        // Notify Citizen if status is Resolved (IN BACKGROUND)
-        if (status === 'Resolved' && grievance.user_id) {
-            const uResult = await db.query("SELECT * FROM users WHERE id = $1", [grievance.user_id]);
+        try {
+            // 1. BEGIN TRANSACTION
+            await db.query('BEGIN');
+
+            const uResult = await db.query("SELECT * FROM users WHERE id = $1", [userId]);
             const user = uResult.rows[0];
+            if (!user) {
+                await db.query('ROLLBACK');
+                return res.status(404).json({ error: 'User not found' });
+            }
 
-            if (user && user.email) {
-                const emailData = email.getGrievanceResolvedEmail(user.name, id, grievance.category, resolutionProof);
-                email.sendEmailNotification(user.email, emailData.subject, emailData.message, emailData.attachments)
-                    .then(emailResult => {
-                        if (emailResult.success) {
-                            console.log(`✅ Resolution email sent to ${user.email} for grievance ${id}`);
-                        } else {
-                            console.error(`❌ Failed to send resolution email to ${user.email}:`, emailResult.error);
+            // 🔐 CHECK OTP VERIFICATION
+            const otpData = otpStore.get(userId);
+            if (!otpData || !otpData.verified) {
+                await db.query('ROLLBACK');
+                return res.status(403).json({
+                    error: 'Payment requires OTP verification. Please verify OTP first.',
+                    requiresOTP: true
+                });
+            }
+
+            // Verify OTP matches payment details
+            if (Math.abs(otpData.amount - amount) > 0.01 || otpData.type !== type) {
+                await db.query('ROLLBACK');
+                otpStore.delete(userId); // Clear invalid OTP
+                return res.status(400).json({
+                    error: 'Payment details do not match OTP request. Please request a new OTP.'
+                });
+            }
+
+            if ((user.wallet_balance || 0) < amount) {
+                await db.query('ROLLBACK');
+                return res.status(400).json({ error: 'Insufficient Balance' });
+            }
+
+            // 2. DEDUCT MONEY & UPDATE SCORE
+            const newBalance = user.wallet_balance - amount;
+            await db.query("UPDATE users SET wallet_balance = $1, score = score + 50 WHERE id = $2", [newBalance, userId]);
+
+            // 3. LOG TRANSACTION to LEDGER
+            const txnId = `TXN-${Date.now()}`;
+            await db.query("INSERT INTO transactions (id, user_id, type, amount, description, date) VALUES ($1, $2, $3, $4, $5, $6)",
+                [txnId, userId, 'PAYMENT', amount, `Bill Payment - ${type} (${billId})`, new Date().toISOString()]
+            );
+
+            // 4. COMMIT
+            await db.query('COMMIT');
+
+            // 🧹 Clear OTP after successful payment (one-time use)
+            otpStore.delete(userId);
+
+            // 5. REAL-TIME EVENT (To Admin Map)
+            io.emit('city-pulse', {
+                type: 'TRANSACTION',
+                lat: user.lat,
+                lng: user.lng,
+                amount: amount,
+                category: type,
+                timestamp: new Date().toISOString()
+            });
+
+            // 6. SEND EMAIL NOTIFICATION (100% FREE with Gmail)
+            if (user.email) {
+                const { subject, message } = email.getBillPaymentEmail(
+                    user.name,
+                    type,
+                    amount,
+                    txnId
+                );
+                email.sendEmailNotification(user.email, subject, message)
+                    .then(result => {
+                        if (result.success) {
+                            console.log(`📧 Email sent to ${user.name}: ${result.messageId}`);
                         }
                     })
-                    .catch(emailError => console.error('❌ Background Email Error:', emailError));
+                    .catch(err => console.error('Email notification error:', err));
             }
+
+            res.json({ success: true, newBalance, message: 'Payment Successful', txnId });
+
+        } catch (err) {
+            await db.query('ROLLBACK');
+            console.error("Transaction Failed:", err);
+            res.status(500).json({ error: `Transaction processing failed: ${err.message}` });
         }
-    } catch (err) {
-        console.error("❌ Resolve grievance error:", err);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to resolve grievance. Please try again.'
-        });
-    }
-});
+    });
 
-app.get('/grievances', requireAuth, async (req, res) => {
-    const userId = req.session.userId;
-    try {
-        const result = await db.query("SELECT * FROM grievances WHERE user_id = $1", [userId]);
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    // 11. Transaction History
+    app.get('/transactions/:userId', async (req, res) => {
+        try {
+            const result = await db.query("SELECT * FROM transactions WHERE user_id = $1 ORDER BY date DESC", [req.params.userId]);
+            res.json(result.rows);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
 
-app.get('/admin/grievances', requireAdmin, async (req, res) => {
-    try {
-        const result = await db.query("SELECT * FROM grievances");
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    // 12. Simulate Monthly Bill Generation
+    app.post('/admin/generate-bills', requireAdmin, async (req, res) => {
+        try {
+            // In a real app, this would insert into a bills table.
+            // For this hackathon demo where bills are static/mocked in GET /bills/:userId,
+            // we will simulate this by logging a "System Event" or just returning success.
+            // To make it "feel" real, we can add a penalty transaction or log a 'BILL_GENERATED' event.
 
-app.post('/admin/grievances/:id/status', requireAdmin, async (req, res) => {
-    const { status } = req.body;
-    try {
-        await db.query("UPDATE grievances SET status = $1 WHERE id = $2", [status, req.params.id]);
+            await db.run("INSERT INTO system_events (id, type, status, affected_users, timestamp) VALUES (?, ?, ?, ?, ?)",
+                [`EVT-${Date.now()}`, 'BILLING_CYCLE', 'COMPLETED', 'ALL', new Date().toISOString()]
+            );
 
-        if (status === 'Resolved') {
-            // Gamification: +5 Points Bonus for engagement/closure
-            const gResult = await db.query("SELECT user_id FROM grievances WHERE id = $1", [req.params.id]);
+            console.log("✅ Monthly bills generated (Simulated)");
+            res.json({ success: true, message: 'Monthly bills generated for all users.' });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // 10. Grievances API
+    app.post('/grievances', requireAuth, async (req, res) => {
+        const { category, description, name } = req.body;
+        const userId = req.session.userId;
+        const id = `GRV - ${Date.now()} `;
+        try {
+            await db.query(
+                `INSERT INTO grievances(id, user_id, name, category, description, status) VALUES($1, $2, $3, $4, $5, 'Pending')`,
+                [id, userId, name, category, description]
+            );
+
+            // Gamification: +10 Points for reporting
+            await db.query("UPDATE users SET score = score + 10 WHERE id = $1", [userId]);
+
+            // Send Email to Admin (Abhishek)
+            const ADMIN_EMAIL = 'abhishekholagundi@gmail.com';
+            const userResult = await db.query("SELECT email FROM users WHERE id = $1", [userId]);
+            const user = userResult.rows[0];
+            const emailData = email.getGrievanceAdminEmail(id, category, name, description, user?.email);
+            email.sendEmailNotification(ADMIN_EMAIL, emailData.subject, emailData.message)
+                .catch(e => console.error("Admin notification failed:", e));
+
+            res.status(201).json({ id, message: 'Grievance submitted successfully' });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // Admin Resolve Grievance
+    app.post('/admin/resolve-grievance', requireAdmin, async (req, res) => {
+        const { id, status, resolutionProof } = req.body; // resolutionProof is Base64 string
+
+        try {
+            // Validate request body
+            if (!id || !status) {
+                console.error('❌ Resolve Grievance - Missing required fields');
+                return res.status(400).json({
+                    success: false,
+                    error: 'Missing required fields: id, status'
+                });
+            }
+
+            if (status === 'Resolved' && !resolutionProof) {
+                console.error('❌ Resolve Grievance - Missing resolution proof');
+                return res.status(400).json({
+                    success: false,
+                    error: 'Resolution proof (photo) is required when marking as resolved'
+                });
+            }
+
+            // Ensure column exists (soft migration)
+            try {
+                await db.query("ALTER TABLE grievances ADD COLUMN IF NOT EXISTS resolution_proof TEXT");
+                console.log('✅ Checked/Added resolution_proof column to grievances table');
+            } catch (e) {
+                // Column already exists, ignore error
+            }
+
+            // Update grievance status
+            await db.query("UPDATE grievances SET status = $1, resolution_proof = $2 WHERE id = $3", [status, resolutionProof, id]);
+
+            // Get grievance details
+            const gResult = await db.query("SELECT * FROM grievances WHERE id = $1", [id]);
             const grievance = gResult.rows[0];
-            if (grievance) await db.query("UPDATE users SET score = score + 5 WHERE id = $1", [grievance.user_id]);
+
+            if (!grievance) {
+                console.error(`❌ Resolve Grievance - Grievance not found: ${id}`);
+                return res.status(404).json({
+                    success: false,
+                    error: 'Grievance not found'
+                });
+            }
+
+            console.log(`✅ Grievance ${id} status updated to: ${status}`);
+
+            res.json({
+                success: true,
+                message: 'Grievance update processed. Citizen notification pending in background.'
+            });
+
+            // Notify Citizen if status is Resolved (IN BACKGROUND)
+            if (status === 'Resolved' && grievance.user_id) {
+                const uResult = await db.query("SELECT * FROM users WHERE id = $1", [grievance.user_id]);
+                const user = uResult.rows[0];
+
+                if (user && user.email) {
+                    const emailData = email.getGrievanceResolvedEmail(user.name, id, grievance.category, resolutionProof);
+                    email.sendEmailNotification(user.email, emailData.subject, emailData.message, emailData.attachments)
+                        .then(emailResult => {
+                            if (emailResult.success) {
+                                console.log(`✅ Resolution email sent to ${user.email} for grievance ${id}`);
+                            } else {
+                                console.error(`❌ Failed to send resolution email to ${user.email}:`, emailResult.error);
+                            }
+                        })
+                        .catch(emailError => console.error('❌ Background Email Error:', emailError));
+                }
+            }
+        } catch (err) {
+            console.error("❌ Resolve grievance error:", err);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to resolve grievance. Please try again.'
+            });
         }
-        res.json({ success: true, message: 'Status updated' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    });
 
-// --- WASTE MANAGEMENT API ---
-app.post('/waste/schedule', requireAuth, async (req, res) => {
-    const { type, slot } = req.body;
-    const userId = req.session.userId;
-    const id = `WST-${Date.now()}`;
+    app.get('/grievances', requireAuth, async (req, res) => {
+        const userId = req.session.userId;
+        try {
+            const result = await db.query("SELECT * FROM grievances WHERE user_id = $1", [userId]);
+            res.json(result.rows);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
 
-    try {
-        await db.query("INSERT INTO waste_requests (id, user_id, type, date, slot, status) VALUES ($1, $2, $3, $4, $5, 'Pending')",
-            [id, userId, type, new Date().toISOString(), slot]);
-        res.json({ success: true, message: 'Pickup Scheduled' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+    app.get('/admin/grievances', requireAdmin, async (req, res) => {
+        try {
+            const result = await db.query("SELECT * FROM grievances");
+            res.json(result.rows);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
 
-app.get('/admin/waste', requireAdmin, async (req, res) => {
-    try {
-        const result = await db.query(`
+    app.post('/admin/grievances/:id/status', requireAdmin, async (req, res) => {
+        const { status } = req.body;
+        try {
+            await db.query("UPDATE grievances SET status = $1 WHERE id = $2", [status, req.params.id]);
+
+            if (status === 'Resolved') {
+                // Gamification: +5 Points Bonus for engagement/closure
+                const gResult = await db.query("SELECT user_id FROM grievances WHERE id = $1", [req.params.id]);
+                const grievance = gResult.rows[0];
+                if (grievance) await db.query("UPDATE users SET score = score + 5 WHERE id = $1", [grievance.user_id]);
+            }
+            res.json({ success: true, message: 'Status updated' });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // --- WASTE MANAGEMENT API ---
+    app.post('/waste/schedule', requireAuth, async (req, res) => {
+        const { type, slot } = req.body;
+        const userId = req.session.userId;
+        const id = `WST-${Date.now()}`;
+
+        try {
+            await db.query("INSERT INTO waste_requests (id, user_id, type, date, slot, status) VALUES ($1, $2, $3, $4, $5, 'Pending')",
+                [id, userId, type, new Date().toISOString(), slot]);
+            res.json({ success: true, message: 'Pickup Scheduled' });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    app.get('/admin/waste', requireAdmin, async (req, res) => {
+        try {
+            const result = await db.query(`
             SELECT w.*, u.name, u.address 
             FROM waste_requests w 
             JOIN users u ON w.user_id = u.id 
             ORDER BY w.date DESC
         `);
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-app.post('/admin/waste/:id/status', requireAdmin, async (req, res) => {
-    const { status } = req.body;
-    try {
-        await db.query("UPDATE waste_requests SET status = $1 WHERE id = $2", [status, req.params.id]);
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// God Mode: Trigger Event
-app.post('/admin/trigger-event', async (req, res) => {
-    // Ideally requireAdmin, but for demo buttons simple fetch might not send cookies easily unless credentials:include
-    // For Hackathon demo ease, we'll leave it open or check headers if needed.
-    // Let's rely on simple access for now.
-
-    const { type } = req.body;
-    console.log(`⚠️ ADMIN TRIGGERED EVENT: ${type} `);
-
-    // Emit GLOBAL Alert
-    io.emit('emergency-alert', {
-        type: type,
-        message: type === 'POWER_OUTAGE' ? 'CRITICAL GRID FAILURE DETECTED' :
-            type === 'WATER_LEAK' ? 'MAJOR WATER PIPELINE BURST' :
-                'SYSTEM NORMAL',
-        timestamp: new Date().toISOString()
+            res.json(result.rows);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
     });
 
-    // Also force update city metrics to reflect chaos instantly
-    // In a real app, we'd update the DB state too.
-    // For visual effect, the simulation.js loop typically overwrites, but the Alert Component is persistent.
-
-    res.json({ success: true, message: `Triggered ${type} ` });
-});
-
-// Settings API
-app.get('/settings', async (req, res) => {
-    try {
-        const result = await db.query("SELECT * FROM settings");
-        const settings = result.rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
-        res.json(settings);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-app.post('/admin/settings', async (req, res) => {
-    const { settings } = req.body;
-    try {
-        for (const [key, value] of Object.entries(settings)) {
-            await db.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $3", [key, String(value), String(value)]);
-        }
-        res.json({ success: true, message: 'Settings Updated' });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// ============================================
-// AI CHATBOT ENDPOINT
-// ============================================
-let chatWithAI;
-try {
-    const aiChat = require('./ai-chat');
-    chatWithAI = aiChat.chatWithAI;
-} catch (error) {
-    chatWithAI = async (message) => {
-        return "AI chat is currently unavailable.";
-    };
-}
-
-app.post('/api/chat', async (req, res) => {
-    try {
-        if (!req.session.userId) {
-            return res.status(401).json({ error: 'Not authenticated' });
-        }
-
-        const { message, history } = req.body;
-
-        if (!message) {
-            return res.status(400).json({ error: 'Message required' });
-        }
-
-        console.log(`🤖 AI Chat request from: ${req.session.userEmail}`);
-
-        // Chat with AI
-        const aiResponse = await chatWithAI(
-            message,
-            req.session.userId,
-            db,
-            history || []
-        );
-
-        res.json(aiResponse);
-    } catch (error) {
-        console.error('❌ AI Chat Error:', error);
-        res.status(500).json({
-            error: 'AI service error',
-            answer: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment."
-        });
-    }
-});
-
-// ============================================
-// CITY ANNOUNCEMENTS
-// ============================================
-
-// Get current active announcement
-app.get('/api/announcements/current', async (req, res) => {
-    try {
-        const result = await db.query(
-            'SELECT * FROM announcements WHERE active = true ORDER BY created_at DESC LIMIT 1'
-        );
-        res.json(result.rows[0] || { message: 'Water supply maintenance in Indiranagar scheduled for 24th Jan.' });
-    } catch (error) {
-        console.error('❌ Error fetching announcement:', error);
-        res.status(500).json({ error: 'Failed to fetch announcement' });
-    }
-});
-
-// Admin: Create new announcement
-app.post('/api/announcements', requireAdmin, async (req, res) => {
-    try {
-        const { message } = req.body;
-
-        if (!message || message.trim().length === 0) {
-            return res.status(400).json({ error: 'Message is required' });
-        }
-
-        // Deactivate all previous announcements
-        await db.query('UPDATE announcements SET active = false');
-
-        // Create new announcement
-        const id = `ANNOUNCE-${Date.now()}`;
-        const created_at = new Date().toISOString();
-
-        await db.query(
-            'INSERT INTO announcements (id, message, created_by, created_at, active) VALUES ($1, $2, $3, $4, true)',
-            [id, message.trim(), req.session.userId, created_at]
-        );
-
-        console.log(`📢 New announcement created by ${req.session.userEmail}: "${message}"`);
-
-        // Send emails to all citizens
+    app.post('/admin/waste/:id/status', requireAdmin, async (req, res) => {
+        const { status } = req.body;
         try {
-            const result = await db.query('SELECT email, name FROM users WHERE role = $1', ["client"]);
-            const users = result.rows;
+            await db.query("UPDATE waste_requests SET status = $1 WHERE id = $2", [status, req.params.id]);
+            res.json({ success: true });
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
 
-            if (users.length > 0) {
-                console.log(`📧 Sending announcement to ${users.length} citizens...`);
+    // God Mode: Trigger Event
+    app.post('/admin/trigger-event', async (req, res) => {
+        // Ideally requireAdmin, but for demo buttons simple fetch might not send cookies easily unless credentials:include
+        // For Hackathon demo ease, we'll leave it open or check headers if needed.
+        // Let's rely on simple access for now.
 
-                for (const user of users) {
-                    try {
-                        await email.sendEmailNotification(
-                            user.email,
-                            '📢 Important City Update - SUVIDHA',
-                            `
+        const { type } = req.body;
+        console.log(`⚠️ ADMIN TRIGGERED EVENT: ${type} `);
+
+        // Emit GLOBAL Alert
+        io.emit('emergency-alert', {
+            type: type,
+            message: type === 'POWER_OUTAGE' ? 'CRITICAL GRID FAILURE DETECTED' :
+                type === 'WATER_LEAK' ? 'MAJOR WATER PIPELINE BURST' :
+                    'SYSTEM NORMAL',
+            timestamp: new Date().toISOString()
+        });
+
+        // Also force update city metrics to reflect chaos instantly
+        // In a real app, we'd update the DB state too.
+        // For visual effect, the simulation.js loop typically overwrites, but the Alert Component is persistent.
+
+        res.json({ success: true, message: `Triggered ${type} ` });
+    });
+
+    // Settings API
+    app.get('/settings', async (req, res) => {
+        try {
+            const result = await db.query("SELECT * FROM settings");
+            const settings = result.rows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {});
+            res.json(settings);
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    app.post('/admin/settings', async (req, res) => {
+        const { settings } = req.body;
+        try {
+            for (const [key, value] of Object.entries(settings)) {
+                await db.query("INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = $3", [key, String(value), String(value)]);
+            }
+            res.json({ success: true, message: 'Settings Updated' });
+        } catch (e) {
+            res.status(500).json({ error: e.message });
+        }
+    });
+
+    // ============================================
+    // AI CHATBOT ENDPOINT
+    // ============================================
+    let chatWithAI;
+    try {
+        const aiChat = require('./ai-chat');
+        chatWithAI = aiChat.chatWithAI;
+    } catch (error) {
+        chatWithAI = async (message) => {
+            return "AI chat is currently unavailable.";
+        };
+    }
+
+    app.post('/api/chat', async (req, res) => {
+        try {
+            if (!req.session.userId) {
+                return res.status(401).json({ error: 'Not authenticated' });
+            }
+
+            const { message, history } = req.body;
+
+            if (!message) {
+                return res.status(400).json({ error: 'Message required' });
+            }
+
+            console.log(`🤖 AI Chat request from: ${req.session.userEmail}`);
+
+            // Chat with AI
+            const aiResponse = await chatWithAI(
+                message,
+                req.session.userId,
+                db,
+                history || []
+            );
+
+            res.json(aiResponse);
+        } catch (error) {
+            console.error('❌ AI Chat Error:', error);
+            res.status(500).json({
+                error: 'AI service error',
+                answer: "I'm sorry, I'm having trouble connecting right now. Please try again in a moment."
+            });
+        }
+    });
+
+    // ============================================
+    // CITY ANNOUNCEMENTS
+    // ============================================
+
+    // Get current active announcement
+    app.get('/api/announcements/current', async (req, res) => {
+        try {
+            const result = await db.query(
+                'SELECT * FROM announcements WHERE active = true ORDER BY created_at DESC LIMIT 1'
+            );
+            res.json(result.rows[0] || { message: 'Water supply maintenance in Indiranagar scheduled for 24th Jan.' });
+        } catch (error) {
+            console.error('❌ Error fetching announcement:', error);
+            res.status(500).json({ error: 'Failed to fetch announcement' });
+        }
+    });
+
+    // Admin: Create new announcement
+    app.post('/api/announcements', requireAdmin, async (req, res) => {
+        try {
+            const { message } = req.body;
+
+            if (!message || message.trim().length === 0) {
+                return res.status(400).json({ error: 'Message is required' });
+            }
+
+            // Deactivate all previous announcements
+            await db.query('UPDATE announcements SET active = false');
+
+            // Create new announcement
+            const id = `ANNOUNCE-${Date.now()}`;
+            const created_at = new Date().toISOString();
+
+            await db.query(
+                'INSERT INTO announcements (id, message, created_by, created_at, active) VALUES ($1, $2, $3, $4, true)',
+                [id, message.trim(), req.session.userId, created_at]
+            );
+
+            console.log(`📢 New announcement created by ${req.session.userEmail}: "${message}"`);
+
+            // Send emails to all citizens
+            try {
+                const result = await db.query('SELECT email, name FROM users WHERE role = $1', ["client"]);
+                const users = result.rows;
+
+                if (users.length > 0) {
+                    console.log(`📧 Sending announcement to ${users.length} citizens...`);
+
+                    for (const user of users) {
+                        try {
+                            await email.sendEmailNotification(
+                                user.email,
+                                '📢 Important City Update - SUVIDHA',
+                                `
                                 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; border-radius: 10px;">
                                     <h1 style="color: white; text-align: center; margin-bottom: 30px;">🏙️ SUVIDHA City Update</h1>
                                     
@@ -1033,51 +1044,51 @@ app.post('/api/announcements', requireAdmin, async (req, res) => {
                                     </div>
                                 </div>
                             `
-                        );
-                    } catch (emailError) {
-                        console.error(`Failed to send to ${user.email}:`, emailError.message);
+                            );
+                        } catch (emailError) {
+                            console.error(`Failed to send to ${user.email}:`, emailError.message);
+                        }
                     }
+
+                    console.log(`✅ Announcement emails sent to all citizens`);
                 }
-
-                console.log(`✅ Announcement emails sent to all citizens`);
+            } catch (emailError) {
+                console.error('❌ Error sending announcement emails:', emailError);
+                // Don't fail the request if emails fail
             }
-        } catch (emailError) {
-            console.error('❌ Error sending announcement emails:', emailError);
-            // Don't fail the request if emails fail
+
+            res.json({
+                success: true,
+                message: 'Announcement posted successfully',
+                announcement: { id, message, created_at }
+            });
+        } catch (error) {
+            console.error('❌ Error creating announcement:', error);
+            res.status(500).json({ error: 'Failed to create announcement' });
         }
+    });
 
-        res.json({
-            success: true,
-            message: 'Announcement posted successfully',
-            announcement: { id, message, created_at }
-        });
-    } catch (error) {
-        console.error('❌ Error creating announcement:', error);
-        res.status(500).json({ error: 'Failed to create announcement' });
-    }
-});
-
-// Admin: Get all announcements
-app.get('/api/announcements', requireAdmin, async (req, res) => {
-    try {
-        const result = await db.query(
-            `SELECT a.*, u.name as creator_name 
+    // Admin: Get all announcements
+    app.get('/api/announcements', requireAdmin, async (req, res) => {
+        try {
+            const result = await db.query(
+                `SELECT a.*, u.name as creator_name 
              FROM announcements a 
              LEFT JOIN users u ON a.created_by = u.id 
              ORDER BY created_at DESC 
              LIMIT 50`
-        );
-        res.json(result.rows);
-    } catch (error) {
-        console.error('❌ Error fetching announcements:', error);
-        res.status(500).json({ error: 'Failed to fetch announcements' });
-    }
-});
+            );
+            res.json(result.rows);
+        } catch (error) {
+            console.error('❌ Error fetching announcements:', error);
+            res.status(500).json({ error: 'Failed to fetch announcements' });
+        }
+    });
 
-// ============================================
-// START SERVER
-// ============================================
-server.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`🔌 Socket.io ready for real-time connections`);
-});
+    // ============================================
+    // START SERVER
+    // ============================================
+    server.listen(PORT, () => {
+        console.log(`🚀 Server running on http://localhost:${PORT}`);
+        console.log(`🔌 Socket.io ready for real-time connections`);
+    });

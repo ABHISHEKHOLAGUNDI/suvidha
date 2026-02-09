@@ -10,7 +10,7 @@ export const useWorldTime = () => {
                 // Determine if we need to fetch. 
                 // To avoid rate-limiting, we only fetch once on mount.
                 // In a real production app, we might NTP sync.
-                const res = await fetch('http://worldtimeapi.org/api/timezone/Asia/Kolkata');
+                const res = await fetch('https://worldtimeapi.org/api/timezone/Asia/Kolkata');
                 if (res.ok) {
                     // const data = await res.json();
                     // Calculate offset if needed, but for now just setting time
