@@ -162,7 +162,7 @@ export const Dashboard: React.FC = () => {
                                 {t('welcome')}, <span className="text-white">{user.name}</span>
                             </h2>
                             <p className="text-xl text-blue-300/60 font-mono tracking-widest uppercase mb-4">
-                                CITIZEN_ID: <span className="text-emerald-400">{user.id}</span> | {t('currentRank').toUpperCase()}: <span className="text-amber-400">{citizenScore.rank}</span>
+                                CITIZEN_ID: <span className="text-emerald-400">{user?.id || 'N/A'}</span> | {(t('currentRank') || 'Rank').toUpperCase()}: <span className="text-amber-400">{citizenScore?.rank || 'Citizen'}</span>
                             </p>
 
                             {/* View Toggle */}
@@ -265,12 +265,12 @@ export const Dashboard: React.FC = () => {
                                             <div className="bg-purple-500/20 p-2 rounded-lg">
                                                 <Award className="text-purple-400" size={24} />
                                             </div>
-                                            <h3 className="font-serif font-bold text-slate-200 tracking-wider">{t('citizenScore').toUpperCase()}</h3>
+                                            <h3 className="font-serif font-bold text-slate-200 tracking-wider">{(t('citizenScore') || 'Citizen Score').toUpperCase()}</h3>
                                         </div>
                                         <h2 className="text-6xl font-serif font-black text-white mb-2 drop-shadow-lg">
-                                            {citizenScore.score}
+                                            {citizenScore?.score || 0}
                                         </h2>
-                                        <p className="text-slate-400 mb-6">Top 5% of City • {citizenScore.rank} Citizen</p>
+                                        <p className="text-slate-400 mb-6">Top 5% of City • {citizenScore?.rank || 'Citizen'} Citizen</p>
 
                                         <div className="w-full max-w-md bg-slate-800/50 rounded-full h-2 mb-2">
                                             <div
@@ -279,8 +279,8 @@ export const Dashboard: React.FC = () => {
                                             ></div>
                                         </div>
                                         <div className="flex justify-between text-xs font-mono text-purple-300/60 w-full max-w-md">
-                                            <span>{t('currentRank').toUpperCase()}</span>
-                                            <span>{(citizenScore.rank || 'CITIZEN').toUpperCase()}</span>
+                                            <span>{(t('currentRank') || 'Rank').toUpperCase()}</span>
+                                            <span>{(citizenScore?.rank || 'CITIZEN').toUpperCase()}</span>
                                         </div>
                                     </div>
                                 </div>
